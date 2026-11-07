@@ -1,7 +1,9 @@
 from pathlib import Path
+from time import monotonic
 
 import PySimpleGUI as sg
 
+from .cliente_red import ClienteRed
 from .config import DIRECCIONES, ETIQUETAS, MAX_EVENTOS, ProcesadorDetecciones
 
 
@@ -280,21 +282,68 @@ def actualizar_interfaz(
     )
 
 
+def _enviar_alerta_si_corresponde(
+    cliente: ClienteRed, procesador: ProcesadorDetecciones
+) -> None:
+    if not procesador.peligros:
+        return
+
+    sectores = ", ".join(
+        ETIQUETAS[direccion]
+        for direccion, _ in DIRECCIONES
+        if direccion in procesador.peligros
+    )
+    cliente.enviar(
+        "[RADAR-ALERTA] ¡Peligro de colisión detectado "
+        f"en sector {sectores}!"
+    )
+
+
 def iniciar_aplicacion() -> None:
     procesador = ProcesadorDetecciones()
     window = crear_ventana()
+    cliente = ClienteRed()
     try:
+        cliente.iniciar()
         actualizar_interfaz(window, procesador)
+        proximo_escaneo = monotonic() + 2
         while True:
-            event, _ = window.read(timeout=2000, timeout_key="-TICK-")
+            event, _ = window.read(timeout=100, timeout_key="-POLL-")
             if event in (sg.WIN_CLOSED, "-CLOSE-"):
                 break
 
-            if event in ("-TICK-", "-SIMULATE-"):
+            actualizar = False
+            ahora = monotonic()
+            if event == "-SIMULATE-" or ahora >= proximo_escaneo:
                 procesador.simular_deteccion()
-            elif event in CELL_KEYS:
-                procesador.alternar_sector(CELL_KEYS[event])
+                actualizar = True
+                if ahora >= proximo_escaneo:
+                    proximo_escaneo = ahora + 2
+                _enviar_alerta_si_corresponde(cliente, procesador)
 
-            actualizar_interfaz(window, procesador)
+            if event in CELL_KEYS:
+                direccion = CELL_KEYS[event]
+                ya_detectado = direccion in procesador.meteoritos
+                procesador.alternar_sector(direccion)
+                accion = "Se retiró la detección" if ya_detectado else (
+                    "Se detectó un meteorito"
+                )
+                cliente.enviar(
+                    f"[RADAR-SECTOR] {accion} en sector "
+                    f"{ETIQUETAS[direccion]}."
+                )
+                actualizar = True
+                _enviar_alerta_si_corresponde(cliente, procesador)
+
+            for tipo, mensaje in cliente.obtener_eventos():
+                if tipo == "mensaje":
+                    procesador.registrar_evento(f"Servidor: {mensaje}")
+                else:
+                    procesador.registrar_evento(mensaje)
+                actualizar = True
+
+            if actualizar:
+                actualizar_interfaz(window, procesador)
     finally:
+        cliente.cerrar()
         window.close()
