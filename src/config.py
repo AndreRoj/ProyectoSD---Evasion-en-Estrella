@@ -6,15 +6,14 @@ DIRECCIONES = (
     ("noroeste", "NOROESTE"),
     ("norte", "NORTE"),
     ("noreste", "NORESTE"),
-    ("oeste", "OESTE"),
     ("este", "ESTE"),
-    ("suroeste", "SUROESTE"),
-    ("sur", "SUR"),
     ("sureste", "SURESTE"),
+    ("sur", "SUR"),
+    ("suroeste", "SUROESTE"),
+    ("oeste", "OESTE"),
 )
 ETIQUETAS = dict(DIRECCIONES)
 MAX_EVENTOS = 100
-TRAYECTORIAS = ("impacto", "paralelo", "tangencial")
 
 
 class ProcesadorDetecciones:
@@ -22,7 +21,6 @@ class ProcesadorDetecciones:
 
     def __init__(self) -> None:
         self._meteoritos: set[str] = set()
-        self._trayectorias: dict[str, str] = {}
         self._eventos: list[str] = []
         self.registrar_evento(
             "Monitoreo iniciado; se realizará un escaneo cada 2 segundos."
@@ -39,14 +37,70 @@ class ProcesadorDetecciones:
     @property
     def peligros(self) -> frozenset[str]:
         return frozenset(
-            direccion
-            for direccion, trayectoria in self._trayectorias.items()
-            if trayectoria == "impacto"
+            grupo[0] for grupo in self.grupos_deteccion if len(grupo) == 1
         )
 
     @property
-    def trayectorias(self) -> dict[str, str]:
-        return self._trayectorias.copy()
+    def grupos_deteccion(self) -> tuple[tuple[str, ...], ...]:
+        """Agrupa detecciones consecutivas en el orden de los ocho sectores."""
+        indices = [
+            index
+            for index, (direccion, _) in enumerate(DIRECCIONES)
+            if direccion in self._meteoritos
+        ]
+        if not indices:
+            return ()
+
+        grupos_indices: list[list[int]] = [[indices[0]]]
+        for index in indices[1:]:
+            if index == grupos_indices[-1][-1] + 1:
+                grupos_indices[-1].append(index)
+            else:
+                grupos_indices.append([index])
+
+        if (
+            len(grupos_indices) > 1
+            and (grupos_indices[-1][-1] + 1) % len(DIRECCIONES)
+            == grupos_indices[0][0]
+        ):
+            grupos_indices[0] = grupos_indices[-1] + grupos_indices[0]
+            grupos_indices.pop()
+
+        return tuple(
+            tuple(DIRECCIONES[index][0] for index in grupo)
+            for grupo in grupos_indices
+        )
+
+    @property
+    def grupos_transito(self) -> tuple[tuple[str, ...], ...]:
+        return tuple(
+            grupo for grupo in self.grupos_deteccion if len(grupo) >= 2
+        )
+
+    def _resumen_clasificacion(self) -> str:
+        grupos = self.grupos_deteccion
+        if not grupos:
+            return "Nave a salvo: no se detectaron meteoritos."
+
+        peligros = [
+            ETIQUETAS[grupo[0]] for grupo in grupos if len(grupo) == 1
+        ]
+        transitos = [
+            " → ".join(ETIQUETAS[direccion] for direccion in grupo)
+            for grupo in grupos
+            if len(grupo) >= 2
+        ]
+        resumen = []
+        if peligros:
+            resumen.append(
+                f"PELIGRO: detección aislada en {', '.join(peligros)}"
+            )
+        if transitos:
+            resumen.append(
+                "Tránsito consecutivo sin amenaza en "
+                + "; ".join(transitos)
+            )
+        return ". ".join(resumen) + "."
 
     def registrar_evento(self, mensaje: str) -> None:
         hora = datetime.now().strftime("%H:%M:%S")
@@ -54,7 +108,7 @@ class ProcesadorDetecciones:
         del self._eventos[:-MAX_EVENTOS]
 
     def procesar_ciclo(self) -> None:
-        """Simula un nuevo escaneo y reemplaza las detecciones anteriores."""
+        """Simula un escaneo binario nuevo y evalúa sus sectores consecutivos."""
         cantidad = random.choices(
             (0, 1, 2, 3), weights=(20, 40, 25, 15), k=1
         )[0]
@@ -63,38 +117,15 @@ class ProcesadorDetecciones:
         )
 
         self._meteoritos = set(detectados)
-        self._trayectorias = {
-            direccion: random.choices(
-                TRAYECTORIAS, weights=(30, 35, 35), k=1
-            )[0]
-            for direccion in detectados
-        }
-
-        if not detectados:
-            self.registrar_evento(
-                "Escaneo completado: no se detectaron meteoritos. Nave a salvo."
-            )
-            return
-
-        detalles = "; ".join(
-            f"{ETIQUETAS[direccion]} ({self._trayectorias[direccion]})"
-            for direccion in detectados
+        detecciones = (
+            ", ".join(ETIQUETAS[direccion] for direccion in detectados)
+            if detectados
+            else "ninguna"
         )
-        if self.peligros:
-            zonas_peligrosas = ", ".join(
-                ETIQUETAS[direccion]
-                for direccion in detectados
-                if direccion in self.peligros
-            )
-            self.registrar_evento(
-                f"PELIGRO: posible trayectoria de impacto en {zonas_peligrosas}. "
-                f"Detecciones: {detalles}."
-            )
-        else:
-            self.registrar_evento(
-                "Nave a salvo: meteoritos con trayectoria paralela o "
-                f"tangencial. Detecciones: {detalles}."
-            )
+        self.registrar_evento(
+            f"Escaneo completado. Sectores detectados: {detecciones}. "
+            f"{self._resumen_clasificacion()}"
+        )
 
     def simular_deteccion(self) -> None:
         self.procesar_ciclo()
@@ -105,22 +136,20 @@ class ProcesadorDetecciones:
 
         if direccion in self._meteoritos:
             self._meteoritos.remove(direccion)
-            self._trayectorias.pop(direccion, None)
             self.registrar_evento(
-                f"Se retiró el meteorito de {ETIQUETAS[direccion]}."
+                f"Se retiró el meteorito de {ETIQUETAS[direccion]}. "
+                f"{self._resumen_clasificacion()}"
             )
         else:
             self._meteoritos.add(direccion)
-            self._trayectorias[direccion] = "impacto"
             self.registrar_evento(
-                f"PELIGRO: meteorito agregado manualmente en "
-                f"{ETIQUETAS[direccion]} (trayectoria de impacto)."
+                f"Se detectó meteorito en {ETIQUETAS[direccion]}. "
+                f"{self._resumen_clasificacion()}"
             )
 
     def despejar_campo(self) -> None:
         if self._meteoritos:
             self._meteoritos.clear()
-            self._trayectorias.clear()
             self.registrar_evento("Campo despejado; no quedan meteoritos.")
         else:
             self.registrar_evento("El campo ya estaba despejado.")

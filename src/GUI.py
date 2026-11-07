@@ -223,7 +223,7 @@ def crear_ventana() -> sg.Window:
         ],
         [
             sg.Text(
-                "Simulación automática; las trayectorias paralelas y tangenciales no representan peligro.",
+                "Un sector aislado activa peligro; detecciones consecutivas representan tránsito.",
                 text_color="#9ca3af",
                 background_color=BACKGROUND,
                 font=("Arial", 9),
@@ -248,11 +248,16 @@ def actualizar_interfaz(
 ) -> None:
     meteoritos = procesador.meteoritos
     peligros = procesador.peligros
+    grupos_transito = procesador.grupos_transito
     for key, direction in CELL_KEYS.items():
         image = METEOR_IMAGE if direction in meteoritos else EMPTY_IMAGE
         window[key].update(filename=str(image), subsample=4)
 
     window["-COUNT-"].update(f"{len(meteoritos)} / 8 sectores")
+    direcciones_transito = "; ".join(
+        " → ".join(ETIQUETAS[direction] for direction in grupo)
+        for grupo in grupos_transito
+    )
     if peligros:
         direcciones_peligrosas = ", ".join(
             ETIQUETAS[direction]
@@ -260,18 +265,15 @@ def actualizar_interfaz(
             if direction in peligros
         )
         window["-STATUS-"].update("PELIGRO", text_color=RED)
-        window["-DETAIL-"].update(
-            f"Posible impacto en: {direcciones_peligrosas}", text_color=RED
-        )
+        detalle = f"Detección aislada en: {direcciones_peligrosas}"
+        if direcciones_transito:
+            detalle += f" | Tránsito sin amenaza: {direcciones_transito}"
+        window["-DETAIL-"].update(detalle, text_color=RED)
     elif meteoritos:
-        direcciones = ", ".join(
-            ETIQUETAS[direction]
-            for direction, _ in DIRECCIONES
-            if direction in meteoritos
-        )
         window["-STATUS-"].update("A SALVO", text_color=GREEN)
         window["-DETAIL-"].update(
-            f"Paso paralelo/tangencial en: {direcciones}", text_color=GREEN
+            f"Tránsito consecutivo sin amenaza: {direcciones_transito}",
+            text_color=GREEN,
         )
     else:
         window["-STATUS-"].update("A SALVO", text_color=GREEN)

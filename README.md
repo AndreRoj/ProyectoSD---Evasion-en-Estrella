@@ -19,11 +19,14 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-La aplicación realiza un escaneo automático cada dos segundos. En cada ciclo
-puede detectar cero o varios meteoritos y clasificar su trayectoria como
-impacto, paralela o tangencial. Solo una trayectoria de impacto cambia el
-estado de la nave a **PELIGRO**; los pasos paralelos y tangenciales se muestran
-en el mapa y en el reporte, pero mantienen el estado **A SALVO**. El botón
-**Simular detección** ejecuta un ciclo de inmediato. Al pulsar una celda se
-agrega o retira un meteorito manualmente; los agregados manuales se consideran
-posibles impactos. La simulación no está conectada a sensores reales.
+La aplicación realiza un escaneo automático cada dos segundos y representa
+cada sector como una detección binaria (meteorito presente o ausente). La
+evaluación sigue el enunciado: un único sector detectado, aislado de los demás
+en el orden circular NO, N, NE, E, SE, S, SO, O, activa **PELIGRO**. Dos o más
+sectores detectados consecutivamente en ese orden forman un tránsito paralelo
+o tangencial y no activan la alarma. Si un escaneo contiene tanto sectores
+aislados como grupos consecutivos, se informa el tránsito, pero la nave queda
+en **PELIGRO** por los sectores aislados. El botón **Simular detección**
+ejecuta un ciclo de inmediato; pulsar una celda agrega o retira una detección y
+recalcula el estado usando la misma regla. La simulación no está conectada a
+sensores reales.
