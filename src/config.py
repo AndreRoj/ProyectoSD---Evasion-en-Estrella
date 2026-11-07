@@ -146,10 +146,3 @@ class ProcesadorDetecciones:
                 f"Se detectó meteorito en {ETIQUETAS[direccion]}. "
                 f"{self._resumen_clasificacion()}"
             )
-
-    def despejar_campo(self) -> None:
-        if self._meteoritos:
-            self._meteoritos.clear()
-            self.registrar_evento("Campo despejado; no quedan meteoritos.")
-        else:
-            self.registrar_evento("El campo ya estaba despejado.")

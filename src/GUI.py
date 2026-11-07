@@ -124,12 +124,6 @@ def crear_ventana() -> sg.Window:
                 button_color=("white", "#2563eb"),
                 pad=(4, 10),
             ),
-            sg.Button(
-                "Despejar campo",
-                key="-CLEAR-",
-                button_color=("white", "#374151"),
-                pad=(4, 10),
-            ),
         ],
     ]
 
@@ -298,8 +292,6 @@ def iniciar_aplicacion() -> None:
 
             if event in ("-TICK-", "-SIMULATE-"):
                 procesador.simular_deteccion()
-            elif event == "-CLEAR-":
-                procesador.despejar_campo()
             elif event in CELL_KEYS:
                 procesador.alternar_sector(CELL_KEYS[event])
 
