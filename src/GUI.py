@@ -1,8 +1,8 @@
-import random
-from datetime import datetime
 from pathlib import Path
 
 import PySimpleGUI as sg
+
+from .config import DIRECCIONES, ETIQUETAS, MAX_EVENTOS, ProcesadorDetecciones
 
 
 IMAGE_DIR = Path(__file__).resolve().parent / "images"
@@ -15,20 +15,10 @@ PANEL_BACKGROUND = "#182437"
 TEXT_COLOR = "#e5e7eb"
 GREEN = "#22c55e"
 RED = "#ef4444"
-MAX_EVENTS = 100
 
-DIRECTIONS = (
-    ("noroeste", "NOROESTE"),
-    ("norte", "NORTE"),
-    ("noreste", "NORESTE"),
-    ("oeste", "OESTE"),
-    ("este", "ESTE"),
-    ("suroeste", "SUROESTE"),
-    ("sur", "SUR"),
-    ("sureste", "SURESTE"),
-)
-CELL_KEYS = {f"-CELL-{direction}-": direction for direction, _ in DIRECTIONS}
-LABELS = dict(DIRECTIONS)
+CELL_KEYS = {
+    f"-CELL-{direction}-": direction for direction, _ in DIRECCIONES
+}
 
 
 def crear_celda(direction: str) -> sg.Column:
@@ -37,7 +27,7 @@ def crear_celda(direction: str) -> sg.Column:
         [
             [
                 sg.Text(
-                    LABELS[direction],
+                    ETIQUETAS[direction],
                     size=(12, 1),
                     justification="center",
                     text_color=TEXT_COLOR,
@@ -91,12 +81,6 @@ def crear_celda_nave() -> sg.Column:
     )
 
 
-def registrar_evento(eventos: list[str], mensaje: str) -> None:
-    hora = datetime.now().strftime("%H:%M:%S")
-    eventos.append(f"[{hora}] {mensaje}")
-    del eventos[:-MAX_EVENTS]
-
-
 def crear_ventana() -> sg.Window:
     mapa = [
         [
@@ -127,7 +111,7 @@ def crear_ventana() -> sg.Window:
         ],
         [
             sg.Text(
-                "Pulsa una celda para alternar su estado.",
+                "Escaneo automático cada 2 segundos.",
                 text_color="#9ca3af",
                 background_color=PANEL_BACKGROUND,
             )
@@ -181,7 +165,7 @@ def crear_ventana() -> sg.Window:
         ],
         [
             sg.Text(
-                f"Se conservan los últimos {MAX_EVENTS} eventos.",
+                f"Se conservan los últimos {MAX_EVENTOS} eventos.",
                 text_color="#9ca3af",
                 background_color=PANEL_BACKGROUND,
             )
@@ -239,7 +223,7 @@ def crear_ventana() -> sg.Window:
         ],
         [
             sg.Text(
-                "La simulación permite probar la interfaz; aún no está conectada a sensores o al sistema distribuido.",
+                "Simulación automática; las trayectorias paralelas y tangenciales no representan peligro.",
                 text_color="#9ca3af",
                 background_color=BACKGROUND,
                 font=("Arial", 9),
@@ -250,6 +234,7 @@ def crear_ventana() -> sg.Window:
     return sg.Window(
         "Detección y evasión en estrella",
         layout,
+        finalize=True,
         size=(1000, 690),
         resizable=True,
         background_color=BACKGROUND,
@@ -259,22 +244,34 @@ def crear_ventana() -> sg.Window:
 
 
 def actualizar_interfaz(
-    window: sg.Window, meteoritos: set[str], eventos: list[str]
+    window: sg.Window, procesador: ProcesadorDetecciones
 ) -> None:
+    meteoritos = procesador.meteoritos
+    peligros = procesador.peligros
     for key, direction in CELL_KEYS.items():
         image = METEOR_IMAGE if direction in meteoritos else EMPTY_IMAGE
         window[key].update(filename=str(image), subsample=4)
 
     window["-COUNT-"].update(f"{len(meteoritos)} / 8 sectores")
-    if meteoritos:
-        direcciones = ", ".join(
-            LABELS[direction]
-            for direction, _ in DIRECTIONS
-            if direction in meteoritos
+    if peligros:
+        direcciones_peligrosas = ", ".join(
+            ETIQUETAS[direction]
+            for direction, _ in DIRECCIONES
+            if direction in peligros
         )
         window["-STATUS-"].update("PELIGRO", text_color=RED)
         window["-DETAIL-"].update(
-            f"Meteorito detectado en: {direcciones}", text_color=RED
+            f"Posible impacto en: {direcciones_peligrosas}", text_color=RED
+        )
+    elif meteoritos:
+        direcciones = ", ".join(
+            ETIQUETAS[direction]
+            for direction, _ in DIRECCIONES
+            if direction in meteoritos
+        )
+        window["-STATUS-"].update("A SALVO", text_color=GREEN)
+        window["-DETAIL-"].update(
+            f"Paso paralelo/tangencial en: {direcciones}", text_color=GREEN
         )
     else:
         window["-STATUS-"].update("A SALVO", text_color=GREEN)
@@ -282,70 +279,28 @@ def actualizar_interfaz(
             "Sin meteoritos detectados", text_color=GREEN
         )
 
-    window["-EVENTS-"].update(value="\n".join(eventos), autoscroll=True)
+    window["-EVENTS-"].update(
+        value="\n".join(procesador.eventos), autoscroll=True
+    )
 
 
-def main() -> None:
-    meteoritos: set[str] = set()
-    eventos: list[str] = []
-    registrar_evento(eventos, "Sistema iniciado; esperando detecciones.")
-
+def iniciar_aplicacion() -> None:
+    procesador = ProcesadorDetecciones()
     window = crear_ventana()
     try:
-        actualizar_interfaz(window, meteoritos, eventos)
+        actualizar_interfaz(window, procesador)
         while True:
-            event, _ = window.read()
+            event, _ = window.read(timeout=2000, timeout_key="-TICK-")
             if event in (sg.WIN_CLOSED, "-CLOSE-"):
                 break
 
-            if event == "-SIMULATE-":
-                disponibles = [
-                    direction
-                    for direction, _ in DIRECTIONS
-                    if direction not in meteoritos
-                ]
-                if disponibles:
-                    cantidad = random.randint(1, min(3, len(disponibles)))
-                    detectados = random.sample(disponibles, cantidad)
-                    meteoritos.update(detectados)
-                    nombres = ", ".join(LABELS[d] for d in detectados)
-                    registrar_evento(
-                        eventos, f"Se detectó meteorito en: {nombres}."
-                    )
-                else:
-                    registrar_evento(
-                        eventos,
-                        "Simulación omitida: los ocho sectores ya tienen meteoritos.",
-                    )
+            if event in ("-TICK-", "-SIMULATE-"):
+                procesador.simular_deteccion()
             elif event == "-CLEAR-":
-                if meteoritos:
-                    meteoritos.clear()
-                    registrar_evento(
-                        eventos, "Campo despejado; no quedan meteoritos."
-                    )
-                else:
-                    registrar_evento(
-                        eventos, "El campo ya estaba despejado."
-                    )
+                procesador.despejar_campo()
             elif event in CELL_KEYS:
-                direction = CELL_KEYS[event]
-                if direction in meteoritos:
-                    meteoritos.remove(direction)
-                    registrar_evento(
-                        eventos,
-                        f"Se retiró el meteorito de {LABELS[direction]}.",
-                    )
-                else:
-                    meteoritos.add(direction)
-                    registrar_evento(
-                        eventos,
-                        f"Se detectó meteorito en {LABELS[direction]}.",
-                    )
+                procesador.alternar_sector(CELL_KEYS[event])
 
-            actualizar_interfaz(window, meteoritos, eventos)
+            actualizar_interfaz(window, procesador)
     finally:
         window.close()
-
-
-if __name__ == "__main__":
-    main()
