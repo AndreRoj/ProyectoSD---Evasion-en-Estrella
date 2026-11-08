@@ -201,7 +201,7 @@ def crear_ventana() -> sg.Window:
     )
 
 
-def _leer_salida(
+def leer_salida(
     proceso: subprocess.Popen[str],
     mensajes: queue.Queue[str],
     avisos: queue.Queue[Matriz],
@@ -224,7 +224,7 @@ def _leer_salida(
             filas.clear()
 
 
-def _iniciar_simulacion() -> subprocess.Popen[str]:
+def iniciar_simulacion() -> subprocess.Popen[str]:
     entorno = os.environ.copy()
     entorno["PYTHONIOENCODING"] = "utf-8"
     opciones: dict[str, int | bool] = {}
@@ -250,7 +250,7 @@ def _iniciar_simulacion() -> subprocess.Popen[str]:
     )
 
 
-def _detener_simulacion(proceso: subprocess.Popen[str]) -> None:
+def detener_simulacion(proceso: subprocess.Popen[str]) -> None:
     if proceso.poll() is not None:
         return
     try:
@@ -273,7 +273,7 @@ def _detener_simulacion(proceso: subprocess.Popen[str]) -> None:
             proceso.wait()
 
 
-def _texto_estado(matriz: Matriz) -> tuple[str, bool]:
+def texto_estado(matriz: Matriz) -> tuple[str, bool]:
     detecciones = sum(valor == 1 for fila in matriz for valor in fila)
     if detecciones == 1:
         return "¡ALERTA ROJA DE COLISIÓN INMINENTE!", True
@@ -282,7 +282,7 @@ def _texto_estado(matriz: Matriz) -> tuple[str, bool]:
     return "SIN AMENAZAS", False
 
 
-def _actualizar_matriz(
+def actualizar_matriz(
     window: sg.Window, matriz: Matriz
 ) -> None:
     posiciones = {
@@ -304,14 +304,14 @@ def _actualizar_matriz(
 def iniciar_aplicacion() -> None:
     window = crear_ventana()
     try:
-        proceso = _iniciar_simulacion()
+        proceso = iniciar_simulacion()
     except OSError:
         window.close()
         raise
     mensajes: queue.Queue[str] = queue.Queue()
     avisos: queue.Queue[Matriz] = queue.Queue()
     hilo_salida = threading.Thread(
-        target=_leer_salida,
+        target=leer_salida,
         args=(proceso, mensajes, avisos),
         name="lector-salida-simulacion",
         daemon=True,
@@ -350,8 +350,8 @@ def iniciar_aplicacion() -> None:
 
             if not avisos.empty() and ahora >= proximo_aviso:
                 matriz = avisos.get()
-                estado, peligro = _texto_estado(matriz)
-                _actualizar_matriz(window, matriz)
+                estado, peligro = texto_estado(matriz)
+                actualizar_matriz(window, matriz)
                 window["-STATUS-"].update(
                     "PELIGRO" if peligro else "A SALVO",
                     text_color=RED if peligro else GREEN,
@@ -367,5 +367,5 @@ def iniciar_aplicacion() -> None:
                     text_color=RED,
                 )
     finally:
-        _detener_simulacion(proceso)
+        detener_simulacion(proceso)
         window.close()
