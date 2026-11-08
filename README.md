@@ -39,3 +39,23 @@ en **PELIGRO** por los sectores aislados. El botón **Simular detección**
 ejecuta un ciclo de inmediato; pulsar una celda agrega o retira una detección y
 recalcula el estado usando la misma regla. La simulación no está conectada a
 sensores reales.
+
+## Chat de operadores
+
+Para activar la comunicación del radar, inicia el servidor en una terminal
+desde la raíz del proyecto:
+
+```bash
+python server.py
+```
+
+En otra terminal, inicia la interfaz con `python main.py`. Cada operador humano
+puede abrir una terminal adicional y ejecutar:
+
+```bash
+python client.py
+```
+
+El servidor escucha en `127.0.0.1:7000`. En el cliente de consola, escribe
+mensajes para enviarlos a todos, usa `/w <usuario> <mensaje>` para enviar uno
+privado y `/salir` para desconectarte.
