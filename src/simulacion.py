@@ -1,5 +1,6 @@
-"""Lanza la nave y los ocho sensores como procesos independientes."""
+"""Inicia la interfaz y administra los procesos de la simulacion."""
 
+import argparse
 import os
 import signal
 import subprocess
@@ -72,4 +73,16 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    argumentos = parser.parse_args()
+    if argumentos.headless:
+        main()
+    else:
+        from GUI import iniciar_aplicacion
+
+        iniciar_aplicacion()
