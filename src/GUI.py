@@ -3,7 +3,7 @@ from time import monotonic
 
 import PySimpleGUI as sg
 
-from .cliente_red import ClienteRed
+from .server import ClienteRed
 from .config import DIRECCIONES, ETIQUETAS, MAX_EVENTOS, ProcesadorDetecciones
 
 
