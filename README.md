@@ -9,7 +9,7 @@ está separado entre el punto de entrada, la GUI y los procesos de detección:
 
 - `main.py`: inicia la aplicación.
 - `src/GUI.py`: crea la ventana y actualiza la interfaz.
-- `src/config.py`: administra los meteoritos y el historial de eventos.
+- `src/deteccion.py`: administra los meteoritos y el historial de eventos.
 - `src/images/`: contiene las imágenes de la interfaz.
 
 La única dependencia externa es PySimpleGUI. La red usa módulos incluidos con

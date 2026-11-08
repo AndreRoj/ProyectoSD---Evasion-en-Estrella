@@ -4,7 +4,7 @@ from time import monotonic
 import PySimpleGUI as sg
 
 from .cliente_red import ClienteRed
-from .config import DIRECCIONES, ETIQUETAS, MAX_EVENTOS, ProcesadorDetecciones
+from .deteccion import DIRECCIONES, ETIQUETAS, MAX_EVENTOS, ProcesadorDetecciones
 
 
 IMAGE_DIR = Path(__file__).resolve().parent / "images"
