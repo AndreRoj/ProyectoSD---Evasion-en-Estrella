@@ -44,7 +44,7 @@ class SectorDuplicadoError(ValueError):
     """Indica que otra conexion ya es propietaria del sector."""
 
 
-def _clasificar_bajo_lock():
+def clasificar_bajo_lock():
     """Clasifica el nivel de peligro a partir de las detecciones activas.
 
     Se llama con ``LOCK_ESTADO`` adquirido para que las lecturas de la matriz
@@ -56,18 +56,44 @@ def _clasificar_bajo_lock():
         proyecto.
     """
     ahora = time.monotonic()
-    detecciones = sum(
+
+    #Los valores se colocan el sentido de anillo como una forma circular de los
+    #los sensores alrededor de la nave 
+    anillo = ["NO", "N", "NE", "E", "SE", "S", "SO", "O"]
+    estados = []
+
+    #Se recorre cada sensor para obtener su información
+    for sector in anillo:
+        fila, columna = SECTORES[sector]
+        estado =  MATRIZ_AMENAZAS[fila][columna] == 1 or DETECCIONES_MANUALES.get(sector, 0) > ahora
+        estados.append(estado)
+
+    detecciones = sum(estados)
+    
+    '''detecciones = sum(
         MATRIZ_AMENAZAS[fila][columna] == 1 or DETECCIONES_MANUALES.get(sector, 0) > ahora
         for sector, (fila, columna) in SECTORES.items()
     )
+    '''
     if detecciones == 0:
         return "SIN AMENAZAS"
     if detecciones == 1:
         return "¡ALERTA ROJA DE COLISIÓN INMINENTE!"
-    return "TRÁNSITO SEGURO (trayectoria paralela/tangencial sin impacto)"
 
+    #Para multibles detecciones se cuenta los bloques (sensores) contiguos 
+    bloques_aislados = 0
+    for i in range(8):
+        #Comparamos un sector con el anterior (el índice -1 lee el último elemento, cerrando el círculo)
+        if estados[i]and not estados[i - 1]:
+            bloques_aislados += 1
 
-def _actualizar_clasificacion(detalle=None):
+    if bloques_aislados == 1 and detecciones <8:
+        return "TRÁNSITO SEGURO (trayectoria paralela/tangencial sin impacto)"
+
+    # Si hay múltiples bloques aislados, o si la nave está rodeada (8 detecciones)
+    return "¡ALERTA ROJA DE COLISIÓN INMINENTE!"
+
+def actualizar_clasificacion(detalle=None):
     """Publica la clasificación actual y el estado completo de la matriz.
 
     La clasificación solo se imprime como texto cuando cambia. En cambio,
@@ -79,7 +105,7 @@ def _actualizar_clasificacion(detalle=None):
     """
     global ULTIMA_CLASIFICACION
     with LOCK_ESTADO:
-        clasificacion = _clasificar_bajo_lock()
+        clasificacion = clasificar_bajo_lock()
         if clasificacion != ULTIMA_CLASIFICACION:
             ULTIMA_CLASIFICACION = clasificacion
             print(f"[NAVE] {clasificacion}", flush=True)
@@ -109,7 +135,7 @@ def _actualizar_clasificacion(detalle=None):
         )
 
 
-def _procesar_mensaje(mensaje, sector_conexion, conexion):
+def procesar_mensaje(mensaje, sector_conexion, conexion):
     """Valida un heartbeat o una detección y actualiza el estado compartido.
 
     El primer mensaje registra qué sector pertenece a la conexión; los
@@ -167,11 +193,11 @@ def _procesar_mensaje(mensaje, sector_conexion, conexion):
 
     if estado is not None:
         print(f"[NAVE] Sector {sector}: deteccion={estado}.", flush=True)
-        _actualizar_clasificacion(f"Sector {sector}: detección={estado}.")
+        actualizar_clasificacion(f"Sector {sector}: detección={estado}.")
     return sector
 
 
-def _simular_deteccion(sector):
+def simular_deteccion(sector):
     """Activa una detección manual temporal en un sector conectado.
 
     Args:
@@ -189,11 +215,11 @@ def _simular_deteccion(sector):
         DETECCIONES_MANUALES[sector] = time.monotonic() + DURACION_DETECCION
 
     print(f"[NAVE] Sector {sector}: deteccion manual=1.", flush=True)
-    _actualizar_clasificacion(f"Detección manual en el sector {sector}.")
+    actualizar_clasificacion(f"Detección manual en el sector {sector}.")
     return True, f"Deteccion simulada en el sector {sector}"
 
 
-def _atender_controles_manual(servidor_control):
+def atender_controles_manual(servidor_control):
     """Atiende solicitudes de detección manual y elimina las que expiran.
 
     Lee una solicitud JSON por conexión en el puerto de control. En cada ciclo
@@ -227,7 +253,7 @@ def _atender_controles_manual(servidor_control):
                     if not isinstance(mensaje, dict) or mensaje.get("tipo") != "SIMULAR_DETECCION":
                         respuesta = {"ok": False, "mensaje": "Solicitud de control no valida"}
                     else:
-                        ok, texto = _simular_deteccion(mensaje.get("sector"))
+                        ok, texto = simular_deteccion(mensaje.get("sector"))
                         respuesta = {"ok": ok, "mensaje": texto}
                 except (json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError) as error:
                     respuesta = {"ok": False, "mensaje": f"No se pudo procesar la solicitud: {error}"}
@@ -249,12 +275,12 @@ def _atender_controles_manual(servidor_control):
         if expirados:
             for sector in expirados:
                 print(f"[NAVE] Sector {sector}: deteccion manual=0.", flush=True)
-            _actualizar_clasificacion(
+            actualizar_clasificacion(
                 "Detección manual finalizada en: " + ", ".join(expirados) + "."
             )
 
 
-def _atender_sensor(conexion, direccion):
+def atender_sensor(conexion, direccion):
     """Procesa los mensajes de una conexión sensor hasta que se cierre.
 
     Cada línea debe contener un objeto JSON del protocolo. Si la conexión se
@@ -272,7 +298,7 @@ def _atender_sensor(conexion, direccion):
             for linea in lector:
                 try:
                     mensaje = json.loads(linea)
-                    sector = _procesar_mensaje(mensaje, sector_conexion, conexion)
+                    sector = procesar_mensaje(mensaje, sector_conexion, conexion)
                 except SectorDuplicadoError as error:
                     print(f"[NAVE] Conexion rechazada: {error}.", flush=True)
                     break
@@ -299,19 +325,19 @@ def _atender_sensor(conexion, direccion):
                     cambio = False
             if cambio:
                 print(f"[NAVE] Sensor {sector_conexion} desconectado; estado reiniciado.", flush=True)
-                _actualizar_clasificacion(
+                actualizar_clasificacion(
                     f"Sensor {sector_conexion} desconectado; estado reiniciado."
                 )
             else:
                 print(f"[NAVE] Sensor {sector_conexion} desconectado.", flush=True)
-                _actualizar_clasificacion(
+                actualizar_clasificacion(
                     f"Sensor {sector_conexion} desconectado."
                 )
         with LOCK_CONEXIONES:
             CONEXIONES.discard(conexion)
 
 
-def _monitorear_heartbeats():
+def monitorear_heartbeats():
     """Desconecta sensores cuyo último heartbeat superó el tiempo límite.
 
     Comprueba periódicamente las marcas de tiempo con un reloj monotónico.
@@ -332,7 +358,7 @@ def _monitorear_heartbeats():
 
         for sector, conexion in fallos:
             print(f"[NAVE] FALLO: sensor {sector} sin heartbeat; marcado desconectado.", flush=True)
-            _actualizar_clasificacion(
+            actualizar_clasificacion(
                 f"FALLO: sensor {sector} sin heartbeat; marcado desconectado."
             )
             if conexion is not None:
@@ -350,7 +376,7 @@ def iniciar_servidor():
     Cada conexión de sensor se procesa en su propio hilo; al cerrar el
     servidor, se detienen los monitores y se cierran las conexiones activas.
     """
-    monitor = threading.Thread(target=_monitorear_heartbeats, name="monitor-heartbeats", daemon=True)
+    monitor = threading.Thread(target=monitorear_heartbeats, name="monitor-heartbeats", daemon=True)
     control = None
     servidor_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     servidor_control.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -363,7 +389,7 @@ def iniciar_servidor():
         servidor_control.listen()
         servidor_control.settimeout(0.5)
         control = threading.Thread(
-            target=_atender_controles_manual,
+            target=atender_controles_manual,
             args=(servidor_control,),
             name="control-manual",
             daemon=True,
@@ -375,7 +401,7 @@ def iniciar_servidor():
         servidor.listen(MAX_SENSORES)
         servidor.settimeout(0.5)
         print(f"[NAVE] Escuchando en {HOST}:{PORT}.", flush=True)
-        _actualizar_clasificacion("Servidor iniciado.")
+        actualizar_clasificacion("Servidor iniciado.")
 
         while not PARAR_SERVIDOR.is_set():
             try:
@@ -391,7 +417,7 @@ def iniciar_servidor():
                 CONEXIONES.add(conexion)
 
             hilo = threading.Thread(
-                target=_atender_sensor,
+                target=atender_sensor,
                 args=(conexion, direccion),
                 name=f"sensor-{direccion[0]}:{direccion[1]}",
                 daemon=True,

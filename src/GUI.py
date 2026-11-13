@@ -189,11 +189,12 @@ def crear_ventana() -> sg.Window:
             )
         ],
         [
+            #terminal exclusiva
             sg.Multiline(
                 "",
                 key="-EVENTS-",
-                size=(58, 24),
-                disabled=True,
+                size=(58, 16),
+                disabled=False,
                 autoscroll=True,
                 text_color=TEXT_COLOR,
                 background_color=BACKGROUND,
@@ -204,11 +205,35 @@ def crear_ventana() -> sg.Window:
         ],
         [
             sg.Text(
+                "REGISTRO DE LATIDOS",
+                font=("Arial", 11, "bold"),
+                text_color=TEXT_COLOR,
+                background_color=PANEL_BACKGROUND,
+                pad=(0,(5,0))
+            )
+        ],
+        [
+            sg.Text(
                 "Los heartbeats y estados se actualizan en tiempo real.",
                 text_color="#9ca3af",
                 background_color=PANEL_BACKGROUND,
-            )
+                )
         ],
+        [
+            #terminal exclusiva para latidos
+            sg.Multiline(
+                "",
+                key="-HEARTBEATS-",
+                size=(58, 8),  
+                disabled=False,
+                autoscroll=True,
+                text_color=MUTED,
+                background_color=BACKGROUND,
+                font=("Consolas", 9),
+                expand_x=True,
+                expand_y=True,
+            )
+        ]
     ]
     layout = [
         [
@@ -495,7 +520,7 @@ def reiniciar_presentacion(window: sg.Window) -> None:
 
 
 def agregar_a_terminal(
-    window: sg.Window, eventos: list[str], mensajes: list[str]
+    window: sg.Window, eventos: list[str], mensajes: list[str], key_terminal: str = "-EVENTS-"
 ) -> None:
     """Agrega mensajes a la terminal visible, conservando solo los recientes.
 
@@ -506,7 +531,7 @@ def agregar_a_terminal(
     """
     eventos.extend(mensaje for mensaje in mensajes if mensaje)
     del eventos[:-MAX_EVENTOS]
-    window["-EVENTS-"].update("\n".join(eventos), autoscroll=True)
+    window[key_terminal].update("\n".join(eventos), autoscroll=True)
 
 
 def iniciar_aplicacion() -> None:
@@ -522,6 +547,8 @@ def iniciar_aplicacion() -> None:
     mensajes: queue.Queue[str] = queue.Queue()
     hilo_salida: threading.Thread | None = None
     eventos: list[str] = []
+    latidos: list[str] = []
+    contador_latidos: int = 0
 
     def actualizar_controles() -> None:
         """Activa o desactiva los botones según exista un proceso activo."""
@@ -547,10 +574,13 @@ def iniciar_aplicacion() -> None:
 
     def iniciar_con_semilla(semilla: int) -> None:
         """Limpia la vista e inicia una nueva ejecución con ``semilla``."""
-        nonlocal proceso, mensajes, hilo_salida, eventos
+        nonlocal proceso, mensajes, hilo_salida, eventos, latidos, contador_latidos
         reiniciar_presentacion(window)
         eventos = []
+        latidos = []
+        contador_latidos = 0
         window["-EVENTS-"].update("")
+        window['-HEARTBEATS-'].update("")
         try:
             proceso = iniciar_simulacion(semilla)
         except OSError as error:
@@ -582,7 +612,9 @@ def iniciar_aplicacion() -> None:
         Los mensajes estructurados se usan para actualizar los widgets; las
         líneas normales del proceso se conservan para mostrar diagnósticos.
         """
-        recibidos: list[str] = []
+        recibidos_eventos: list[str] = []
+        recibidos_latidos: list[str] = []
+
         while True:
             try:
                 linea = mensajes.get_nowait()
@@ -593,10 +625,13 @@ def iniciar_aplicacion() -> None:
             except ValueError as error:
                 resultado = f"[INTERFAZ] {error}"
             if resultado is not None:
-                recibidos.append(resultado)
+                if resultado.startswith("[HEARTBEAT]"):
+                    recibidos_latidos.append(resultado)
+                else:
+                    recibidos_eventos.append(resultado)
             elif not linea.startswith(MARCADOR_EVENTO_INTERFAZ):
-                recibidos.append(linea)
-        return recibidos
+                recibidos_eventos.append(linea)
+        return recibidos_eventos, recibidos_latidos
 
     try:
         # PySimpleGUI procesa los clics aquí; el timeout permite revisar la
@@ -619,21 +654,41 @@ def iniciar_aplicacion() -> None:
                 reiniciar_presentacion(window)
                 eventos.append("[SIMULACION] Simulacion detenida.")
 
-            eventos.extend(procesar_mensajes_pendientes())
+            nuevos_ev, nuevos_lat = procesar_mensajes_pendientes()
+            eventos.extend(nuevos_ev)
+            
+            for latido in nuevos_lat:
+                latidos.append(latido)
+                contador_latidos += 1
+                if contador_latidos == 8:
+                    latidos.append("-" * 40) # <-- Línea separadora
+                    contador_latidos = 0
 
             if proceso is not None and proceso.poll() is not None:
                 if hilo_salida is not None:
                     hilo_salida.join(timeout=1.0)
-                eventos.extend(procesar_mensajes_pendientes())
+                
+                nuevos_ev, nuevos_lat = procesar_mensajes_pendientes()
+                eventos.extend(nuevos_ev)
+                #Para separar los latidos viejos de los nuevos
+                for latido in nuevos_lat:
+                    latidos.append(latido)
+                    contador_latidos += 1
+                    if contador_latidos == 8:
+                        latidos.append("-" * 40) # <-- Línea separadora
+                        contador_latidos = 0
+                
                 proceso = None
                 hilo_salida = None
                 reiniciar_presentacion(window)
                 eventos.append("[SIMULACION] Simulacion finalizada.")
                 actualizar_controles()
 
-            if eventos:
-                agregar_a_terminal(window, eventos, [])
+            if eventos or latidos:
+                agregar_a_terminal(window, eventos, [], "-EVENTS-")
+                agregar_a_terminal(window, latidos, [], "-HEARTBEATS-")
                 eventos = eventos[-MAX_EVENTOS:]
+                latidos = latidos[-MAX_EVENTOS:]
     finally:
         if proceso is not None:
             detener_actual()
