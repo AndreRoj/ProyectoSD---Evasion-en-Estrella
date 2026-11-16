@@ -27,5 +27,13 @@ SEMILLA = 0
 INTERVALO_DETECCION = 5.0
 DURACION_DETECCION = 5.0
 PROBABILIDAD_DETECCION = 0.15
+# Cada cinco segundos se sortea si un sensor conectado queda bajo control.
+INTERVALO_CONTROL_ALIENIGENA = 5.0
+# Probabilidad de intrusión en cada sorteo del intervalo anterior.
+PROBABILIDAD_CONTROL_ALIENIGENA = 0.10
+# Mientras haya sensores afectados, se intenta reparar cada uno una vez por segundo.
+INTERVALO_REPARACION_ALIENIGENA = 1.0
+# Probabilidad de éxito por sensor en cada intento de reparación.
+PROBABILIDAD_REPARACION_ALIENIGENA = 0.50
 # El servidor rechaza más conexiones simultáneas que sectores disponibles.
 MAX_SENSORES = len(SECTORES)

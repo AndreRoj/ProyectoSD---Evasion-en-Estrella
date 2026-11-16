@@ -188,6 +188,7 @@ def crear_ventana() -> sg.Window:
                 expand_x=True,
             )
         ],
+        # Las terminales siguen el flujo nuevo solo si ya estaban al final.
         [
             #terminal exclusiva
             sg.Multiline(
@@ -196,6 +197,7 @@ def crear_ventana() -> sg.Window:
                 size=(58, 16),
                 disabled=False,
                 autoscroll=True,
+                autoscroll_only_at_bottom=True,
                 text_color=TEXT_COLOR,
                 background_color=BACKGROUND,
                 font=("Consolas", 9),
@@ -227,6 +229,7 @@ def crear_ventana() -> sg.Window:
                 size=(58, 8),  
                 disabled=False,
                 autoscroll=True,
+                autoscroll_only_at_bottom=True,
                 text_color=MUTED,
                 background_color=BACKGROUND,
                 font=("Consolas", 9),

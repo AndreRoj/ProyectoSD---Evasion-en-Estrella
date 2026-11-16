@@ -5,7 +5,9 @@ vigila sus heartbeats y publica eventos estructurados para la interfaz.
 Un segundo puerto local permite solicitar detecciones manuales.
 """
 
+import argparse
 import json
+import random
 import socket
 import threading
 import time
@@ -14,9 +16,14 @@ from config import (
     CONTROL_PORT,
     DURACION_DETECCION,
     HOST,
+    INTERVALO_CONTROL_ALIENIGENA,
+    INTERVALO_REPARACION_ALIENIGENA,
     MAX_SENSORES,
     PORT,
+    PROBABILIDAD_CONTROL_ALIENIGENA,
+    PROBABILIDAD_REPARACION_ALIENIGENA,
     SECTORES,
+    SEMILLA,
     TIMEOUT_SENSOR,
 )
 
@@ -33,6 +40,8 @@ MATRIZ_AMENAZAS = [
 ULTIMO_HEARTBEAT = {}
 SENSORES_CONECTADOS = {}
 DETECCIONES_MANUALES = {}
+# Los sectores aquí guardados producen una lectura falsa hasta ser reparados.
+NODOS_CONTROLADOS = set()
 LOCK_ESTADO = threading.Lock()
 PARAR_SERVIDOR = threading.Event()
 CONEXIONES = set()
@@ -65,7 +74,12 @@ def clasificar_bajo_lock():
     #Se recorre cada sensor para obtener su información
     for sector in anillo:
         fila, columna = SECTORES[sector]
-        estado =  MATRIZ_AMENAZAS[fila][columna] == 1 or DETECCIONES_MANUALES.get(sector, 0) > ahora
+        # Un sensor comprometido se trata como si reportara una amenaza activa.
+        estado = (
+            MATRIZ_AMENAZAS[fila][columna] == 1
+            or DETECCIONES_MANUALES.get(sector, 0) > ahora
+            or sector in NODOS_CONTROLADOS
+        )
         estados.append(estado)
 
     detecciones = sum(estados)
@@ -120,11 +134,17 @@ def actualizar_clasificacion(detalle=None):
             if vencimiento > ahora:
                 fila, columna = SECTORES[sector]
                 matriz[fila][columna] = 1
+        # La instantánea de la GUI refleja las lecturas falsas de sensores comprometidos.
+        for sector in NODOS_CONTROLADOS:
+            fila, columna = SECTORES[sector]
+            matriz[fila][columna] = 1
 
         evento = {
             "tipo": "estado",
             "matriz": matriz,
             "conectados": list(SENSORES_CONECTADOS),
+            # Permite a la interfaz identificar qué detecciones son intrusiones.
+            "control_alienigena": sorted(NODOS_CONTROLADOS),
             "clasificacion": clasificacion,
             "peligro": clasificacion == "¡ALERTA ROJA DE COLISIÓN INMINENTE!",
             "detalle": detalle,
@@ -321,6 +341,8 @@ def atender_sensor(conexion, direccion):
                     fila, columna = SECTORES[sector_conexion]
                     cambio = MATRIZ_AMENAZAS[fila][columna] != 0
                     MATRIZ_AMENAZAS[fila][columna] = 0
+                    # Una desconexión elimina también el estado de control alienígena.
+                    NODOS_CONTROLADOS.discard(sector_conexion)
                 else:
                     cambio = False
             if cambio:
@@ -354,6 +376,8 @@ def monitorear_heartbeats():
                     conexion = SENSORES_CONECTADOS.pop(sector, None)
                     fila, columna = SECTORES[sector]
                     MATRIZ_AMENAZAS[fila][columna] = 0
+                    # No se conserva una intrusión en un sensor que ya se marcó caído.
+                    NODOS_CONTROLADOS.discard(sector)
                     fallos.append((sector, conexion))
 
         for sector, conexion in fallos:
@@ -369,15 +393,91 @@ def monitorear_heartbeats():
                 conexion.close()
 
 
-def iniciar_servidor():
+def monitorear_control_alienigena(semilla):
+    """Genera intrusiones y repara sensores usando la semilla de la simulación.
+
+    Cada cinco segundos prueba la probabilidad de afectar un nodo conectado.
+    Mientras haya nodos afectados, intenta reparar cada uno una vez por
+    segundo.
+
+    Args:
+        semilla: Semilla base para reproducir las decisiones aleatorias.
+    """
+    # Los sensores usan semilla + índice; este desplazamiento crea otro flujo aleatorio.
+    generador = random.Random(semilla + MAX_SENSORES)
+    segundos = 0
+
+    while not PARAR_SERVIDOR.wait(INTERVALO_REPARACION_ALIENIGENA):
+        segundos += 1
+        reparados = []
+        intentos_fallidos = []
+        with LOCK_ESTADO:
+            # Cada sensor comprometido tiene un intento independiente por segundo.
+            for sector in sorted(NODOS_CONTROLADOS):
+                if generador.random() < PROBABILIDAD_REPARACION_ALIENIGENA:
+                    NODOS_CONTROLADOS.remove(sector)
+                    reparados.append(sector)
+                else:
+                    intentos_fallidos.append(sector)
+
+        for sector in intentos_fallidos:
+            print(
+                f"[NAVE] Intento de reparación sin éxito en el sensor {sector}.",
+                flush=True,
+            )
+        for sector in reparados:
+            print(
+                f"[NAVE] Control alienígena reparado en el sensor {sector}.",
+                flush=True,
+            )
+            actualizar_clasificacion(
+                f"Sensor {sector} liberado del control alienígena."
+            )
+
+        # El ciclo es de un segundo; solo se sortea una intrusión al completar cinco.
+        if segundos % round(
+            INTERVALO_CONTROL_ALIENIGENA / INTERVALO_REPARACION_ALIENIGENA
+        ):
+            continue
+        if generador.random() >= PROBABILIDAD_CONTROL_ALIENIGENA:
+            continue
+
+        with LOCK_ESTADO:
+            # Se elige al azar entre sensores activos que todavía no estén comprometidos.
+            candidatos = sorted(set(SENSORES_CONECTADOS) - NODOS_CONTROLADOS)
+            if not candidatos:
+                continue
+            sector = generador.choice(candidatos)
+            NODOS_CONTROLADOS.add(sector)
+
+        print(
+            f"[NAVE] Control alienígena detectado en el sensor {sector}; "
+            "iniciando reparación.",
+            flush=True,
+        )
+        actualizar_clasificacion(
+            f"Control alienígena detectado en el sensor {sector}."
+        )
+
+
+def iniciar_servidor(semilla=SEMILLA):
     """Inicia los sockets y los hilos que componen el servidor central.
 
     Mantiene un listener para los sensores y otro para controles manuales.
     Cada conexión de sensor se procesa en su propio hilo; al cerrar el
     servidor, se detienen los monitores y se cierran las conexiones activas.
+
+    Args:
+        semilla: Semilla base para el ciclo de control alienígena.
     """
     monitor = threading.Thread(target=monitorear_heartbeats, name="monitor-heartbeats", daemon=True)
     control = None
+    aliens = threading.Thread(
+        target=monitorear_control_alienigena,
+        args=(semilla,),
+        name="control-alienigena",
+        daemon=True,
+    )
     servidor_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     servidor_control.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -402,6 +502,8 @@ def iniciar_servidor():
         servidor.settimeout(0.5)
         print(f"[NAVE] Escuchando en {HOST}:{PORT}.", flush=True)
         actualizar_clasificacion("Servidor iniciado.")
+        # El monitor de intrusiones empieza solo después de abrir el servidor central.
+        aliens.start()
 
         while not PARAR_SERVIDOR.is_set():
             try:
@@ -438,9 +540,14 @@ def iniciar_servidor():
                 pass
             conexion.close()
         monitor.join(timeout=1.0)
+        if aliens.is_alive():
+            aliens.join(timeout=INTERVALO_REPARACION_ALIENIGENA + 0.5)
         if control is not None:
             control.join(timeout=1.0)
 
 
 if __name__ == "__main__":
-    iniciar_servidor()
+    parser = argparse.ArgumentParser()
+    # La semilla recibida por el coordinador mantiene reproducible la simulación.
+    parser.add_argument("--seed", type=int, default=SEMILLA)
+    iniciar_servidor(parser.parse_args().seed)

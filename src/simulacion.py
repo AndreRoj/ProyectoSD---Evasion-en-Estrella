@@ -63,8 +63,8 @@ def main(semilla=SEMILLA):
     termina o se interrumpe la simulación; siempre limpia los hijos al salir.
 
     Args:
-        semilla: Entero que se distribuye a todos los sensores para reproducir
-            sus secuencias de detección.
+        semilla: Entero que se distribuye al servidor y a los sensores para
+            reproducir las secuencias de la simulación.
     """
     procesos = []
     try:
@@ -72,8 +72,14 @@ def main(semilla=SEMILLA):
         entorno["PYTHONHASHSEED"] = "0"
         opciones_proceso = {"cwd": DIRECTORIO, "env": entorno}
         # La nave debe estar escuchando antes de iniciar los clientes.
+        # Compartir la semilla también hace reproducibles las intrusiones alienígenas.
         servidor = subprocess.Popen(
-            [PYTHON, str(DIRECTORIO / "nave_server.py")],
+            [
+                PYTHON,
+                str(DIRECTORIO / "nave_server.py"),
+                "--seed",
+                str(semilla),
+            ],
             **opciones_proceso,
         )
         procesos.append(servidor)

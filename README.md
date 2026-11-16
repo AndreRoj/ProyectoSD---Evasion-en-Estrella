@@ -25,6 +25,12 @@ actualizan a partir del mismo evento. Una detección en un sector se clasifica
 como peligro; varias detecciones simultáneas se clasifican como tránsito
 seguro, de acuerdo con la lógica existente del proyecto.
 
+El control alienígena ocurre automáticamente: cada cinco segundos hay un 10%
+de probabilidad de que un sensor conectado sea afectado. Mientras lo esté,
+reporta una detección falsa; la nave intenta repararlo cada segundo con un
+50% de probabilidad. El sector afectado y cada reparación aparecen en la
+terminal. La secuencia también depende de la semilla de la simulación.
+
 La misma semilla reproduce la secuencia pseudoaleatoria de detecciones de los
 sensores. Para iniciar la simulación sin la interfaz se puede ejecutar
 `python simulacion.py --headless --seed 42` desde `src`.
