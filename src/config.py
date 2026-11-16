@@ -1,9 +1,12 @@
-"""Configuracion compartida de Aegis-Star 8-Sector."""
+"""Parámetros de red y comportamiento compartidos por todos los procesos."""
 
+# Dirección local: el servidor solo acepta conexiones desde este equipo.
 HOST = "127.0.0.1"
+# Los sensores se conectan al puerto de datos; la GUI usa el puerto de control.
 PORT = 65432
 CONTROL_PORT = 65433
 
+# Posición de cada sensor en la matriz 3x3; el centro se reserva para la nave.
 SECTORES = {
     "NO": (0, 0),
     "N": (0, 1),
@@ -15,19 +18,14 @@ SECTORES = {
     "SE": (2, 2),
 }
 
-"""
-Los sectores representados en matriz
-    0   1       2
-0 |NO   N   NE|
-1 |O    🚀  E |
-2 |SO   S   SE| 
-
-"""
-
+# Un sensor que supere este tiempo sin enviar heartbeats se considera caído.
 TIMEOUT_SENSOR = 7.0
 HEARTBEAT_INTERVAL = 3.0
-SEMILLA = 42
+# Se declara la semilla 
+SEMILLA = 0
+# Período entre decisiones de detección y tiempo que permanece activa una.
 INTERVALO_DETECCION = 5.0
 DURACION_DETECCION = 5.0
 PROBABILIDAD_DETECCION = 0.15
+# El servidor rechaza más conexiones simultáneas que sectores disponibles.
 MAX_SENSORES = len(SECTORES)

@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // Nombre que se muestra en el selector de ejecuciones de VS Code.
+            "name": "Simulacion Aegis-Star",
+            // Usa el depurador de Python instalado por la extensión Python.
+            "type": "debugpy",
+            "request": "launch",
+            // Punto de entrada: decide si abre la GUI o ejecuta en modo terminal.
+            "program": "${workspaceFolder}/src/simulacion.py",
+            // Los módulos config, GUI y los recursos de imágenes están en src.
+            "cwd": "${workspaceFolder}/src",
+            // Muestra los mensajes de la simulación en la terminal integrada.
+            "console": "integratedTerminal"
+        }
+    ]
+}
