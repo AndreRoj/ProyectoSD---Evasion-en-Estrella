@@ -113,9 +113,6 @@ def actualizar_clasificacion(detalle=None):
     La clasificación solo se imprime como texto cuando cambia. En cambio,
     cada llamada emite un evento JSON para que la GUI sincronice imágenes,
     estado de peligro y sensores conectados desde una instantánea común.
-
-    Args:
-        detalle: Descripción opcional del cambio que originó la actualización.
     """
     global ULTIMA_CLASIFICACION
     with LOCK_ESTADO:
@@ -162,18 +159,6 @@ def procesar_mensaje(mensaje, sector_conexion, conexion):
     posteriores deben identificar ese mismo sector. Un heartbeat actualiza el
     instante del último latido, mientras que una detección modifica la matriz.
 
-    Args:
-        mensaje: Objeto JSON decodificado enviado por el sensor.
-        sector_conexion: Sector previamente asociado a esta conexión, o
-            ``None`` mientras todavía no se ha registrado.
-        conexion: Socket propietario del sector.
-
-    Returns:
-        El nombre del sector asociado al mensaje.
-
-    Raises:
-        ValueError: Si el mensaje o el sector no cumplen el protocolo.
-        SectorDuplicadoError: Si otro socket ya es propietario del sector.
     """
     if not isinstance(mensaje, dict):
         raise ValueError("El mensaje debe ser un objeto JSON")
@@ -203,10 +188,11 @@ def procesar_mensaje(mensaje, sector_conexion, conexion):
             fila, columna = SECTORES[sector]
             MATRIZ_AMENAZAS[fila][columna] = estado
         else:
+            es_alien = sector in NODOS_CONTROLADOS
             print(
                 MARCADOR_EVENTO_INTERFAZ
                 + json.dumps(
-                    {"tipo": "heartbeat", "sector": sector},
+                    {"tipo": "heartbeat", "sector": sector, "alien": es_alien},
                 ),
                 flush=True,
             )
@@ -220,11 +206,6 @@ def procesar_mensaje(mensaje, sector_conexion, conexion):
 def simular_deteccion(sector):
     """Activa una detección manual temporal en un sector conectado.
 
-    Args:
-        sector: Nombre del sector donde se desea simular el objeto.
-
-    Returns:
-        Par ``(éxito, mensaje)`` que describe el resultado de la solicitud.
     """
     if not isinstance(sector, str) or sector not in SECTORES:
         return False, "Sector ausente o desconocido"
@@ -245,9 +226,6 @@ def atender_controles_manual(servidor_control):
     Lee una solicitud JSON por conexión en el puerto de control. En cada ciclo
     también revisa las fechas de expiración de las detecciones manuales y
     publica el nuevo estado si alguna terminó.
-
-    Args:
-        servidor_control: Socket de escucha del puerto de control local.
     """
     while not PARAR_SERVIDOR.is_set():
         try:
@@ -307,9 +285,6 @@ def atender_sensor(conexion, direccion):
     interrumpe o se rechaza, libera el sector, limpia su detección y retira el
     socket del conjunto global de conexiones.
 
-    Args:
-        conexion: Socket TCP aceptado por el servidor principal.
-        direccion: Dirección de red del cliente, usada para los diagnósticos.
     """
     sector_conexion = None
     print(f"[NAVE] Conexion recibida desde {direccion}.", flush=True)
@@ -399,9 +374,6 @@ def monitorear_control_alienigena(semilla):
     Cada cinco segundos prueba la probabilidad de afectar un nodo conectado.
     Mientras haya nodos afectados, intenta reparar cada uno una vez por
     segundo.
-
-    Args:
-        semilla: Semilla base para reproducir las decisiones aleatorias.
     """
     # Los sensores usan semilla + índice; este desplazamiento crea otro flujo aleatorio.
     generador = random.Random(semilla + MAX_SENSORES)
@@ -422,16 +394,16 @@ def monitorear_control_alienigena(semilla):
 
         for sector in intentos_fallidos:
             print(
-                f"[NAVE] Intento de reparación sin éxito en el sensor {sector}.",
+                f"/n[NAVE] REPARACION - Intento de reparación sin éxito en el sensor {sector}.",
                 flush=True,
             )
         for sector in reparados:
             print(
-                f"[NAVE] Control alienígena reparado en el sensor {sector}.",
+                f"[NAVE] REPARACION - CONTROL ALIENIGENA reparado en el sensor {sector}.",
                 flush=True,
             )
             actualizar_clasificacion(
-                f"Sensor {sector} liberado del control alienígena."
+                f"/nSensor {sector} liberado del CONTROL ALIENIGENA."
             )
 
         # El ciclo es de un segundo; solo se sortea una intrusión al completar cinco.
@@ -451,12 +423,12 @@ def monitorear_control_alienigena(semilla):
             NODOS_CONTROLADOS.add(sector)
 
         print(
-            f"[NAVE] Control alienígena detectado en el sensor {sector}; "
+            f"/n[NAVE] CONTRO ALIENIGENA DETECTADO! - sensor {sector}; "
             "iniciando reparación.",
             flush=True,
         )
         actualizar_clasificacion(
-            f"Control alienígena detectado en el sensor {sector}."
+            f"/nCONTRO ALIENIGENA DETECTADO! - sensor {sector}."
         )
 
 
@@ -466,9 +438,6 @@ def iniciar_servidor(semilla=SEMILLA):
     Mantiene un listener para los sensores y otro para controles manuales.
     Cada conexión de sensor se procesa en su propio hilo; al cerrar el
     servidor, se detienen los monitores y se cierran las conexiones activas.
-
-    Args:
-        semilla: Semilla base para el ciclo de control alienígena.
     """
     monitor = threading.Thread(target=monitorear_heartbeats, name="monitor-heartbeats", daemon=True)
     control = None

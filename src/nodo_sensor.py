@@ -28,14 +28,6 @@ def ejecutar_sensor(sector, semilla=SEMILLA):
     global, para que las ejecuciones con la misma semilla sean reproducibles.
     Un hilo de fondo mantiene los heartbeats mientras el hilo principal
     simula detecciones y sus períodos de duración.
-
-    Args:
-        sector: Nombre del sector que representa este proceso sensor.
-        semilla: Semilla base para generar la secuencia pseudoaleatoria.
-
-    Raises:
-        ValueError: Si el sector no forma parte de la configuración.
-        OSError: Si no se puede establecer o mantener la conexión TCP.
     """
     if sector not in SECTORES:
         raise ValueError(f"Sector desconocido: {sector}")
