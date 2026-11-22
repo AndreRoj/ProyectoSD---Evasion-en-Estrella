@@ -20,15 +20,13 @@ DIRECTORIO = Path(__file__).resolve().parent
 PYTHON = sys.executable
 
 
-def _detener_procesos(procesos):
+def detener_procesos(procesos):
     """Cierra todos los procesos hijos y espera a que terminen.
 
     Primero solicita su terminación, luego les da un breve plazo para salir
     limpiamente y, por último, fuerza el cierre de los que sigan ejecutándose.
     El plazo compartido evita esperar varios segundos por cada proceso.
 
-    Args:
-        procesos: Lista con el servidor y los procesos de los sensores.
     """
     for proceso in reversed(procesos):
         if proceso.poll() is None:
@@ -61,10 +59,6 @@ def main(semilla=SEMILLA):
     El servidor se inicia primero para que los sensores encuentren sus puertos
     al conectarse. El proceso coordinador sigue activo hasta que un proceso
     termina o se interrumpe la simulación; siempre limpia los hijos al salir.
-
-    Args:
-        semilla: Entero que se distribuye a todos los sensores para reproducir
-            sus secuencias de detección.
     """
     procesos = []
     try:
@@ -72,8 +66,14 @@ def main(semilla=SEMILLA):
         entorno["PYTHONHASHSEED"] = "0"
         opciones_proceso = {"cwd": DIRECTORIO, "env": entorno}
         # La nave debe estar escuchando antes de iniciar los clientes.
+        # Compartir la semilla también hace reproducibles las intrusiones alienígenas.
         servidor = subprocess.Popen(
-            [PYTHON, str(DIRECTORIO / "nave_server.py")],
+            [
+                PYTHON,
+                str(DIRECTORIO / "nave_server.py"),
+                "--seed",
+                str(semilla),
+            ],
             **opciones_proceso,
         )
         procesos.append(servidor)
@@ -107,7 +107,7 @@ def main(semilla=SEMILLA):
     except RuntimeError as error:
         print(f"[SIMULACION] {error}.", file=sys.stderr, flush=True)
     finally:
-        _detener_procesos(procesos)
+        detener_procesos(procesos)
 
 
 if __name__ == "__main__":

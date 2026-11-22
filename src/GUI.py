@@ -53,12 +53,6 @@ Matriz = list[list[int | str]]
 
 def crear_celda(direccion: str) -> sg.Column:
     """Construye la vista de un sector con su imagen y estado de heartbeat.
-
-    Args:
-        direccion: Nombre del sector, por ejemplo, ``"NO"`` o ``"E"``.
-
-    Returns:
-        Columna de PySimpleGUI con etiqueta, imagen y estado de conexión.
     """
     return sg.Column(
         [
@@ -188,6 +182,7 @@ def crear_ventana() -> sg.Window:
                 expand_x=True,
             )
         ],
+        # Las terminales siguen el flujo nuevo solo si ya estaban al final.
         [
             #terminal exclusiva
             sg.Multiline(
@@ -196,6 +191,7 @@ def crear_ventana() -> sg.Window:
                 size=(58, 16),
                 disabled=False,
                 autoscroll=True,
+                autoscroll_only_at_bottom=True,
                 text_color=TEXT_COLOR,
                 background_color=BACKGROUND,
                 font=("Consolas", 9),
@@ -227,6 +223,7 @@ def crear_ventana() -> sg.Window:
                 size=(58, 8),  
                 disabled=False,
                 autoscroll=True,
+                autoscroll_only_at_bottom=True,
                 text_color=MUTED,
                 background_color=BACKGROUND,
                 font=("Consolas", 9),
@@ -297,13 +294,6 @@ def leer_salida(
     Se ejecuta en un hilo de fondo para que la lectura bloqueante de stdout no
     congele la ventana. No modifica widgets: los cambios visuales pertenecen
     al hilo principal de la interfaz.
-
-    Args:
-        proceso: Proceso de simulación cuya salida se va a leer.
-        mensajes: Cola donde se publican las líneas recibidas.
-
-    Raises:
-        RuntimeError: Si el proceso no tiene una tubería de salida configurada.
     """
     if proceso.stdout is None:
         raise RuntimeError("La salida de la simulacion no esta disponible")
@@ -317,12 +307,6 @@ def iniciar_simulacion(semilla: int) -> subprocess.Popen[str]:
     El modo sin interfaz evita abrir una segunda ventana. Su salida estándar
     y errores se combinan en una tubería para que la GUI pueda mostrar tanto
     los eventos estructurados como los mensajes de diagnóstico.
-
-    Args:
-        semilla: Entero que determina las secuencias pseudoaleatorias.
-
-    Returns:
-        El proceso hijo que ejecuta ``simulacion.py``.
     """
     entorno = os.environ.copy()
     entorno["PYTHONIOENCODING"] = "utf-8"
@@ -357,9 +341,6 @@ def detener_simulacion(proceso: subprocess.Popen[str]) -> None:
     Primero envía una señal de parada acorde al sistema operativo y espera a
     que el programa cierre sus procesos internos. Si no responde, intenta
     terminarlo y finalmente lo mata para no dejar procesos activos.
-
-    Args:
-        proceso: Proceso hijo que se debe detener.
     """
     if proceso.poll() is not None:
         return
@@ -384,7 +365,7 @@ def detener_simulacion(proceso: subprocess.Popen[str]) -> None:
 
 
 def actualizar_matriz(
-    window: sg.Window, matriz: Matriz, conectados: set[str]
+    window: sg.Window, matriz: Matriz, conectados: set[str], control_alien: set[str]
 ) -> None:
     """Refleja en las imágenes y etiquetas el estado actual de cada sector.
 
@@ -392,20 +373,26 @@ def actualizar_matriz(
     sensor se selecciona la imagen de meteorito o la vacía según la matriz y
     se indica si el servidor lo considera conectado.
 
-    Args:
-        window: Ventana cuyos elementos se van a actualizar.
-        matriz: Estado de detección de los ocho sectores.
-        conectados: Nombres de los sectores que mantienen conexión activa.
     """
     for key, direccion in CELDAS.items():
         fila, columna = SECTORES[direccion]
         imagen = METEOR_IMAGE if matriz[fila][columna] == 1 else EMPTY_IMAGE
         window[key].update(filename=str(imagen), subsample=4)
+        
         conectado = direccion in conectados
-        window[f"-HEARTBEAT-{direccion}-"].update(
-            "HEARTBEAT OK" if conectado else "SIN LATIDO",
-            text_color=GREEN if conectado else MUTED,
-        )
+        hackeado = direccion in control_alien
+        
+        if hackeado:
+            texto = "ALIEN (HACKED)"
+            color = RED
+        elif conectado:
+            texto = "HEARTBEAT OK"
+            color = GREEN
+        else:
+            texto = "SIN LATIDO"
+            color = MUTED
+        
+        window[f"-HEARTBEAT-{direccion}-"].update(texto,text_color=color)
 
 
 def actualizar_evento(window: sg.Window, linea: str) -> str | None:
@@ -415,16 +402,6 @@ def actualizar_evento(window: sg.Window, linea: str) -> str | None:
     eventos de estado contienen una instantánea completa, usada para refrescar
     la matriz, la clasificación y el indicador de peligro en una sola pasada.
 
-    Args:
-        window: Ventana que muestra el estado de la simulación.
-        linea: Línea recibida desde la salida del proceso hijo.
-
-    Returns:
-        Texto descriptivo para agregar a la terminal, o ``None`` si la línea
-        no requiere agregar un detalle adicional.
-
-    Raises:
-        ValueError: Si el JSON, el tipo de evento o sus datos son inválidos.
     """
     if not linea.startswith(MARCADOR_EVENTO_INTERFAZ):
         return None
@@ -439,18 +416,28 @@ def actualizar_evento(window: sg.Window, linea: str) -> str | None:
     tipo = evento.get("tipo")
     if tipo == "heartbeat":
         sector = evento.get("sector")
+        es_alien = evento.get("alien", False)
         if sector not in CELDAS.values():
             raise ValueError(f"Sector de heartbeat desconocido: {sector!r}")
-        window[f"-HEARTBEAT-{sector}-"].update(
-            "HEARTBEAT OK", text_color=GREEN
-        )
-        return f"[HEARTBEAT] {sector}: latido recibido."
 
+        texto_actual = window[f"-HEARTBEAT-{sector}-"].get()
+
+        hackeado = es_alien or (texto_actual == "ALIEN (HACKED)")
+        
+        if hackeado:
+            window[f"-HEARTBEAT-{sector}-"].update("ALIEN (HACKED)", text_color=RED)
+            return f"[HEARTBEAT] {sector}: sin latido (interferencia alienígena)"
+
+        else:
+            window[f"-HEARTBEAT-{sector}-"].update("HEARTBEAT OK", text_color=GREEN)
+            return f"[HEARTBEAT] {sector}: latido recibido."
+        
     if tipo != "estado":
         raise ValueError(f"Tipo de evento de interfaz desconocido: {tipo!r}")
 
     matriz = evento.get("matriz")
     conectados = evento.get("conectados")
+    control_alien = evento.get("control_alienigena",[])
     clasificacion = evento.get("clasificacion")
     peligro = evento.get("peligro")
     if (
@@ -464,7 +451,8 @@ def actualizar_evento(window: sg.Window, linea: str) -> str | None:
     ):
         raise ValueError("El evento de estado contiene datos invalidos")
 
-    actualizar_matriz(window, matriz, set(conectados))
+    actualizar_matriz(window, matriz, set(conectados), set(control_alien))
+    
     window["-STATUS-"].update(
         "PELIGRO" if peligro else "A SALVO",
         text_color=RED if peligro else GREEN,
@@ -478,13 +466,6 @@ def actualizar_evento(window: sg.Window, linea: str) -> str | None:
 
 def leer_semilla(window: sg.Window) -> int | None:
     """Lee y convierte el valor escrito en el campo de semilla.
-
-    Args:
-        window: Ventana que contiene el campo ``-SEED-``.
-
-    Returns:
-        La semilla como entero, o ``None`` después de mostrar un error si el
-        campo está vacío o no contiene un número entero.
     """
     texto = window["-SEED-"].get().strip()
     try:
@@ -503,15 +484,13 @@ def reiniciar_presentacion(window: sg.Window) -> None:
     La matriz queda sin amenazas y todos los sensores aparecen sin latido.
     Este reinicio visual no inicia ni detiene procesos.
 
-    Args:
-        window: Ventana cuyos elementos se deben restablecer.
     """
     matriz: Matriz = [
         [0, 0, 0],
         [0, "X", 0],
         [0, 0, 0],
     ]
-    actualizar_matriz(window, matriz, set())
+    actualizar_matriz(window, matriz, set(), set())
     window["-STATUS-"].update("SIMULACION DETENIDA", text_color=AMBER)
     window["-DETAIL-"].update(
         "Escribe una semilla y pulsa Correr para iniciar.",
@@ -523,11 +502,6 @@ def agregar_a_terminal(
     window: sg.Window, eventos: list[str], mensajes: list[str], key_terminal: str = "-EVENTS-"
 ) -> None:
     """Agrega mensajes a la terminal visible, conservando solo los recientes.
-
-    Args:
-        window: Ventana que contiene el control ``-EVENTS-``.
-        eventos: Historial de mensajes que se mantiene en memoria.
-        mensajes: Nuevas líneas que se deben anexar al historial.
     """
     eventos.extend(mensaje for mensaje in mensajes if mensaje)
     del eventos[:-MAX_EVENTOS]
