@@ -394,16 +394,22 @@ def monitorear_control_alienigena(semilla):
 
         for sector in intentos_fallidos:
             print(
-                f"/n[NAVE] REPARACION - Intento de reparación sin éxito en el sensor {sector}.",
+                f"""
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[NAVE] ❌REPARACION - Intento de reparación SIN EXITO en el sensor {sector}.🛠️""",
                 flush=True,
             )
         for sector in reparados:
             print(
-                f"[NAVE] REPARACION - CONTROL ALIENIGENA reparado en el sensor {sector}.",
+                f"""
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[NAVE] ✔️REPARACION - CONTROL ALIENIGENA reparado en el sensor {sector}.🛠️""",
                 flush=True,
             )
             actualizar_clasificacion(
-                f"/nSensor {sector} liberado del CONTROL ALIENIGENA."
+                f"""
+✔️Sensor {sector} liberado del CONTROL ALIENIGENA.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"""
             )
 
         # El ciclo es de un segundo; solo se sortea una intrusión al completar cinco.
@@ -423,12 +429,16 @@ def monitorear_control_alienigena(semilla):
             NODOS_CONTROLADOS.add(sector)
 
         print(
-            f"/n[NAVE] CONTRO ALIENIGENA DETECTADO! - sensor {sector}; "
+            f"""
+--------------------------------
+[NAVE] 👽CONTRO ALIENIGENA DETECTADO! - sensor {sector}; """
             "iniciando reparación.",
             flush=True,
         )
         actualizar_clasificacion(
-            f"/nCONTRO ALIENIGENA DETECTADO! - sensor {sector}."
+            f"""
+👽CONTRO ALIENIGENA DETECTADO! - sensor {sector}👽.
+---------------------------------"""
         )
 
 
